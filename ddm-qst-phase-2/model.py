@@ -83,3 +83,4 @@ class ConditionalD3PM(nn.Module):
         out = self.output_head(h)
         # Reshape to (Batch, Num_Qubits, 2 classes)
         return out.view(-1, self.num_qubits, 2)
+# Don't break what works
