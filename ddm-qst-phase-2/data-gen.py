@@ -47,7 +47,7 @@ def generate_synthetic_data():
     # For simplicity in this file, we use a standard AerSimulator with noise
     # In a full run, insert: from qiskit_ibm_runtime.fake_provider import FakeTorino
     backend = AerSimulator() 
-    
+    # Noise models - fakevigov2 
     basis_combs = get_basis_combinations(NUM_QUBITS)
     dataset = []
 
