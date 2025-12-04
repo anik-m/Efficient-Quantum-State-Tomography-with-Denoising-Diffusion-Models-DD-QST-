@@ -23,6 +23,7 @@ def create_circuit(state_type, num_qubits, basis_str):
     elif state_type == 'ghz':
         qc.h(0)
         for i in range(num_qubits - 1): qc.cx(i, i+1)
+    # Random State should also be considered
 
     # 2. Measurement Basis Rotation [cite: 71, 72]
     # Qiskit measures in Z by default. 
