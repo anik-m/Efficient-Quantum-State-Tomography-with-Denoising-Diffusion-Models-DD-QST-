@@ -7,7 +7,7 @@ from config import NUM_QUBITS, SHOTS_TRAIN, STATE_TYPE
 
 def get_basis_combinations(num_qubits):
     """Generates all 3^N Pauli basis strings (e.g., 'XX', 'ZY')."""
-    bases = ['X', 'Y', 'Z']
+    bases = ['X', 'Y', 'Z', 'I']# remove II, III
     return [''.join(p) for p in product(bases, repeat=num_qubits)]
 
 def create_circuit(state_type, num_qubits, basis_str):
