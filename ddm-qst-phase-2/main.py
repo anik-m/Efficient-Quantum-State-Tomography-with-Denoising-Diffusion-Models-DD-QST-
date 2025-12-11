@@ -3,59 +3,94 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+import argparse
+import sys
 
-# Imports from our modules
-import config as cfg
+# Imports
+from config import DEFAULTS
 from data_gen import generate_synthetic_data
 from dataset import QuantumStateDataset
 from model import ConditionalD3PM
 from diffusion import DiscreteDiffusion
-from reconstruct import linear_inversion, get_pauli_matrix
+from reconstruct import linear_inversion
 from qiskit.quantum_info import state_fidelity, Statevector
 
+def get_args():
+    parser = argparse.ArgumentParser(description="Phase 2: DDM Quantum State Tomography")
+    
+    # Physics Args
+    parser.add_argument('--num_qubits', type=int, default=DEFAULTS['num_qubits'],
+                        help='Number of qubits (N)')
+    parser.add_argument('--state_type', type=str, default=DEFAULTS['state_type'],
+                        choices=['plus', 'bell', 'ghz'], help='Target quantum state')
+    
+    # Training Args
+    parser.add_argument('--epochs', type=int, default=DEFAULTS['num_epochs'],
+                        help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=DEFAULTS['batch_size'])
+    parser.add_argument('--lr', type=float, default=DEFAULTS['learning_rate'])
+    
+    # Data Args
+    parser.add_argument('--shots_train', type=int, default=DEFAULTS['shots_train'])
+    parser.add_argument('--shots_infer', type=int, default=DEFAULTS['shots_infer'])
+
+    # Model Args (Advanced)
+    parser.add_argument('--timesteps', type=int, default=DEFAULTS['num_timesteps'])
+    parser.add_argument('--hidden_dim', type=int, default=DEFAULTS['hidden_dim'])
+    parser.add_argument('--embed_dim', type=int, default=DEFAULTS['embed_dim'])
+    
+    # If running in a notebook, use empty args to avoid errors with sys.argv
+    if 'ipykernel_launcher' in sys.argv[0]:
+        args = parser.parse_args([])
+    else:
+        args = parser.parse_args()
+        
+    return args
+
 def main():
-    # 1. Generate Training Data
-    print("--- Phase 2: Initialization ---")
-    raw_data, basis_list = generate_synthetic_data()
+    args = get_args()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"--- Configuration: N={args.num_qubits} | State={args.state_type} | Device={device} ---")
+
+    # 1. Generate Training Data (Pass args dynamically)
+    raw_data, basis_list = generate_synthetic_data(
+        args.num_qubits, 
+        args.state_type, 
+        args.shots_train
+    )
     
     # 2. Dataset Setup
-    dataset = QuantumStateDataset(raw_data, cfg.NUM_QUBITS)
-    loader = DataLoader(dataset, batch_size=cfg.BATCH_SIZE, shuffle=True)
-    print(f"Training on {len(dataset)} shots.")
-
+    dataset = QuantumStateDataset(raw_data, args.num_qubits)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    
     # 3. Model Setup
     model = ConditionalD3PM(
-        num_qubits=cfg.NUM_QUBITS,
+        num_qubits=args.num_qubits,
         num_bases=len(basis_list),
-        num_timesteps=cfg.NUM_TIMESTEPS,
-        embed_dim=cfg.EMBED_DIM,
-        hidden_dim=cfg.HIDDEN_DIM,
-        num_blocks=cfg.NUM_RES_BLOCKS
-    ).to(cfg.DEVICE)
+        num_timesteps=args.timesteps,
+        embed_dim=args.embed_dim,
+        hidden_dim=args.hidden_dim,
+        num_blocks=DEFAULTS['num_res_blocks'] # Keep this constant or add arg if needed
+    ).to(device)
     
-    diffusion = DiscreteDiffusion(model, cfg.NUM_TIMESTEPS, cfg.DEVICE)
-    optimizer = optim.AdamW(model.parameters(), lr=cfg.LEARNING_RATE)
+    diffusion = DiscreteDiffusion(model, args.timesteps, device)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
 
-    # 4. Training Loop [cite: 158]
-    print(f"--- Starting Training ({cfg.NUM_EPOCHS} Epochs) ---")
+    # 4. Training Loop
+    print(f"--- Starting Training ({args.epochs} Epochs) ---")
     model.train()
-    for epoch in range(cfg.NUM_EPOCHS):
+    for epoch in range(args.epochs):
         total_loss = 0
         for x_0, basis_idx in loader:
-            x_0 = x_0.to(cfg.DEVICE)
-            basis_idx = basis_idx.to(cfg.DEVICE)
+            x_0 = x_0.to(device)
+            basis_idx = basis_idx.to(device)
             
-            # Sample random t
-            t = torch.randint(1, cfg.NUM_TIMESTEPS + 1, (x_0.shape[0],), device=cfg.DEVICE)
-            
-            # Forward Diffuse
+            t = torch.randint(1, args.timesteps + 1, (x_0.shape[0],), device=device)
             x_t = diffusion.q_sample(x_0, t)
             
-            # Predict
             pred_logits = model(x_t, t, basis_idx)
             
-            # Loss (Cross Entropy) [cite: 125]
-            # PyTorch CE expects (Batch, Classes, ...), so permute logits
+            # Loss: (Batch, Classes, N)
             loss = F.cross_entropy(pred_logits.permute(0, 2, 1), x_0)
             
             optimizer.zero_grad()
@@ -66,34 +101,37 @@ def main():
         if (epoch+1) % 50 == 0:
             print(f"Epoch {epoch+1}: Loss {total_loss/len(loader):.4f}")
 
-    # 5. Inference (Sampling)
+    # 5. Inference
     print("--- Generating Synthetic Samples ---")
     model.eval()
     synthetic_results = {}
     
     for i, basis in enumerate(basis_list):
-        # Generate clean samples from noise
-        samples = diffusion.p_sample(cfg.SHOTS_INFER, i, cfg.NUM_QUBITS)
+        samples = diffusion.p_sample(args.shots_infer, i, args.num_qubits)
         synthetic_results[basis] = samples.cpu().numpy()
 
-    # 6. Reconstruction & Fidelity
+    # 6. Reconstruction
     print("--- Reconstructing State ---")
-    rho_recon = linear_inversion(synthetic_results, cfg.NUM_QUBITS)
+    rho_recon = linear_inversion(synthetic_results, args.num_qubits)
     
-    # Define Target for comparison
-    if cfg.STATE_TYPE == 'bell':
-        # |Phi+> = (|00> + |11>) / sqrt(2)
-        target = Statevector.from_label('00') + Statevector.from_label('11')
-        target = target / np.sqrt(2)
+    # Define Target Logic dynamically based on args
+    if args.state_type == 'plus':
+        # |+> tensor product N times
+        target = Statevector.from_label('+' * args.num_qubits)
+    elif args.state_type in ['bell', 'ghz']:
+        # GHZ state: (|0...0> + |1...1>) / sqrt(2)
+        zero_state = Statevector.from_label('0' * args.num_qubits)
+        one_state = Statevector.from_label('1' * args.num_qubits)
+        target = (zero_state + one_state) / np.sqrt(2)
     
     fid = state_fidelity(target, rho_recon)
-    print(f"\nFinal Result for {cfg.NUM_QUBITS}-Qubit {cfg.STATE_TYPE.upper()}:")
+    print(f"\nFinal Result for {args.num_qubits}-Qubit {args.state_type.upper()}:")
     print(f"Reconstruction Fidelity: {fid:.5f}")
     
     if fid > 0.9:
         print("SUCCESS: High fidelity entanglement verification.")
     else:
-        print("WARNING: Low fidelity. Check training duration or shot noise.")
+        print("WARNING: Low fidelity.")
 
 if __name__ == "__main__":
     main()
