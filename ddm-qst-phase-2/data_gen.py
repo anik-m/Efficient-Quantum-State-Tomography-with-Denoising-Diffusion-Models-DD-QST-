@@ -7,7 +7,7 @@ from config import NUM_QUBITS, SHOTS_TRAIN, STATE_TYPE
 
 def get_basis_combinations(num_qubits):
     """Generates all 3^N Pauli basis strings (e.g., 'XX', 'ZY')."""
-    bases = ['X', 'Y', 'Z', 'I']# remove II, III
+    bases = ['X', 'Y', 'Z']# remove II, III
     return [''.join(p) for p in product(bases, repeat=num_qubits)]
 
 def create_circuit(state_type, num_qubits, basis_str):
@@ -43,7 +43,7 @@ def generate_synthetic_data():
     """Generates noisy training data for all bases."""
     print(f"--- Generating Data for {NUM_QUBITS}-Qubit {STATE_TYPE.upper()} State ---")
     
-    # Use a noisy simulator (or Fake backend as per plan [cite: 133])
+    # Use a noisy simulator (or Fake backend as per plan )
     # For simplicity in this file, we use a standard AerSimulator with noise
     # In a full run, insert: from qiskit_ibm_runtime.fake_provider import FakeTorino
     backend = AerSimulator() 

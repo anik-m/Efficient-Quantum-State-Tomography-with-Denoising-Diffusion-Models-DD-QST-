@@ -4,7 +4,7 @@ import numpy as np
 
 class FiLM(nn.Module):
     """
-    Feature-wise Linear Modulation [cite: 96]
+    Feature-wise Linear Modulation
     Outputs gamma (scale) and beta (shift) based on condition.
     """
     def __init__(self, condition_dim, feature_dim):
