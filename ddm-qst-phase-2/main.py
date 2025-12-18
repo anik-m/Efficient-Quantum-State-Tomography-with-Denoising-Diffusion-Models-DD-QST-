@@ -132,22 +132,36 @@ def main():
         print("SUCCESS: High fidelity entanglement verification.")
     else:
         print("WARNING: Low fidelity.")
-    # Insert inside main() after generate_synthetic_data()
 
+    # --- Running Baseline Check on Training Data ---
     print("--- Running Baseline Check on Training Data ---")
-    # Group raw data by basis for linear inversion
+    
+    # 1. Group raw data by basis for linear inversion
     baseline_data = {}
     for entry in raw_data:
-        baseline_data[entry['basis_str']] = np.array([list(k) for k in entry['counts'].keys() for _ in range(entry['counts'][k])])
+        # Convert Qiskit counts to the format linear_inversion expects
+        # (Expand counts to list of bitstrings)
+        samples = []
+        for bitstr, count in entry['counts'].items():
+            # Convert '01' string to [0, 1] list
+            bits = [int(b) for b in bitstr]
+            samples.extend([bits] * count)
+        baseline_data[entry['basis_str']] = np.array(samples)
 
-    # Reconstruct using the training data directly
-    rho_baseline = linear_inversion(baseline_data, cfg.NUM_QUBITS)
+    # 2. Reconstruct using the training data directly
+    # FIX: Use 'args.num_qubits' instead of 'cfg.NUM_QUBITS'
+    rho_baseline = linear_inversion(baseline_data, args.num_qubits)
 
-    # Check fidelity
-    # Note: Re-define 'target' here or move target definition up
-    if cfg.STATE_TYPE == 'ghz':
-        target_check = (Statevector.from_label('0'*cfg.NUM_QUBITS) + Statevector.from_label('1'*cfg.NUM_QUBITS)) / np.sqrt(2)
-        print(f"Baseline Fidelity (Upper Bound): {state_fidelity(target_check, rho_baseline):.5f}")
+    # 3. Check fidelity against the target
+    # FIX: Use 'args.state_type' instead of 'cfg.STATE_TYPE'
+    if args.state_type == 'ghz' or args.state_type == 'bell':
+        # Re-create target for check (or reuse 'target' variable if defined above)
+        zero_state = Statevector.from_label('0' * args.num_qubits)
+        one_state = Statevector.from_label('1' * args.num_qubits)
+        target_check = (zero_state + one_state) / np.sqrt(2)
+        
+        fid_base = state_fidelity(target_check, rho_baseline)
+        print(f"Baseline Fidelity (Upper Bound from Training Data): {fid_base:.5f}")
 
 if __name__ == "__main__":
     main()
