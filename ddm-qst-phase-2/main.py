@@ -132,6 +132,22 @@ def main():
         print("SUCCESS: High fidelity entanglement verification.")
     else:
         print("WARNING: Low fidelity.")
+    # Insert inside main() after generate_synthetic_data()
+
+    print("--- Running Baseline Check on Training Data ---")
+    # Group raw data by basis for linear inversion
+    baseline_data = {}
+    for entry in raw_data:
+        baseline_data[entry['basis_str']] = np.array([list(k) for k in entry['counts'].keys() for _ in range(entry['counts'][k])])
+
+    # Reconstruct using the training data directly
+    rho_baseline = linear_inversion(baseline_data, cfg.NUM_QUBITS)
+
+    # Check fidelity
+    # Note: Re-define 'target' here or move target definition up
+    if cfg.STATE_TYPE == 'ghz':
+        target_check = (Statevector.from_label('0'*cfg.NUM_QUBITS) + Statevector.from_label('1'*cfg.NUM_QUBITS)) / np.sqrt(2)
+        print(f"Baseline Fidelity (Upper Bound): {state_fidelity(target_check, rho_baseline):.5f}")
 
 if __name__ == "__main__":
     main()
