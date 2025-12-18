@@ -1,11 +1,11 @@
+# dataset.py
 import torch
 from torch.utils.data import Dataset
 
 class QuantumStateDataset(Dataset):
     """
     Unrolls Qiskit counts into bitstring tensors.
-    Input: counts {'00': 45, '11': 55}
-    Output Tensor: [[0,0], ... [1,1]]
+    HANDLES QISKIT ENDIANNESS: Reverses bitstrings so Index 0 == Qubit 0.
     """
     def __init__(self, raw_data_list, num_qubits):
         self.bitstrings = []
@@ -16,12 +16,16 @@ class QuantumStateDataset(Dataset):
             counts = entry['counts']
             
             for bit_str, count in counts.items():
-                # Convert string '01' to list [0, 1]
-                # Note: Qiskit is Little-Endian, but for learning correlation
-                # strict ordering matters less than consistency.
+                # Qiskit returns 'q2 q1 q0' (Little Endian).
+                # We want list [q0, q1, q2] so it matches our Basis list.
+                
+                # 1. Convert string to list
                 bits = [int(b) for b in bit_str] 
                 
-                # Add 'count' copies of this bitstring
+                # 2. FLIP IT REVERSE IT
+                bits = bits[::-1] 
+                
+                # Add 'count' copies
                 self.bitstrings.extend([bits] * count)
                 self.basis_indices.extend([basis_idx] * count)
 
@@ -32,5 +36,4 @@ class QuantumStateDataset(Dataset):
         return len(self.bitstrings)
 
     def __getitem__(self, idx):
-        # Returns: (Bitstring [N], Basis_Index [1])
         return self.bitstrings[idx], self.basis_indices[idx]
