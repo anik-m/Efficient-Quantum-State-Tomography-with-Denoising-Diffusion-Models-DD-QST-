@@ -1,0 +1,13 @@
+# Deep Learning Framework
+torch>=2.0.0
+numpy>=1.23.0
+
+# Quantum Computing (Qiskit 1.x ecosystem)
+qiskit>=1.0.0
+qiskit-aer>=0.13.0
+qiskit-ibm-runtime>=0.20.0
+
+# Experimentation & Visualization
+qiskit-experiments>=0.6.0
+matplotlib>=3.7.0
+tqdm>=4.66.0
