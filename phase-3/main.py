@@ -7,7 +7,7 @@ import argparse
 import sys
 
 from config import DEFAULTS
-from data_gen import generate_synthetic_data
+from data_gen import generate_synthetic_data, generate_universal_dataset
 from dataset import QuantumStateDataset
 from model import ConditionalD3PM
 from diffusion import DiscreteDiffusion
