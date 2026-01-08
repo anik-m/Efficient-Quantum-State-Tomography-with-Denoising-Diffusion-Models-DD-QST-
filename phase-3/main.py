@@ -22,7 +22,7 @@ def get_args():
     parser.add_argument('--state_type', type=str, default='rqc', 
                         choices=['plus', 'bell', 'ghz', 'rqc'])
     parser.add_argument('--noise_type', type=str, default='readout',
-                        choices=['ideal', 'readout', 'depolarizing', 'thermal'])
+                        choices=['torino', 'ideal', 'readout', 'depolarizing', 'thermal'])
     parser.add_argument('--rqc_depth', type=int, default=5, help='Depth of random circuit')
     
     # Training Config
