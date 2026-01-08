@@ -36,6 +36,11 @@ def get_args():
     parser.add_argument('--embed_dim', type=int, default=DEFAULTS['embed_dim'])
     parser.add_argument('--timesteps', type=int, default=DEFAULTS['num_timesteps'])
 
+    # RQC Universal Config
+    parser.add_argument('--num_samples', type=int, default=100, help='Number of RQC circuits')
+    parser.add_argument('--min_depth', type=int, default=2)
+    parser.add_argument('--max_depth', type=int, default=5)
+
     # Handle notebook execution
     if 'ipykernel_launcher' in sys.argv[0]:
         args = parser.parse_args([])
@@ -52,6 +57,22 @@ def main():
     print(f"Noise: {args.noise_type.upper()}")
     if args.state_type == 'rqc':
         print(f"RQC Depth: {args.rqc_depth}")
+        raw_data, basis_list = generate_universal_dataset(
+            num_samples=args.num_samples,
+            num_qubits=args.num_qubits,
+            min_depth=args.min_depth,
+            max_depth=args.max_depth,
+            shots=args.shots_train,
+            noise_type=args.noise_type
+        )
+    else:
+        raw_data, basis_list, target_state = generate_synthetic_data(
+            args.num_qubits, 
+            args.state_type, 
+            args.shots_train,
+            args.noise_type,
+            args.rqc_depth
+        )
     print(f"Training: {args.shots_train} shots | {args.epochs} epochs")
     
     # 1. Generate Training Data

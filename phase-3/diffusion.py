@@ -7,7 +7,7 @@ class DiscreteDiffusion:
         self.num_timesteps = num_timesteps
         self.device = device
         
-        # Define Transition Matrices [cite: 113, 248]
+        # Define Transition Matrices 
         # Q_t: Matrix where Q[row_i, col_j] = P(x_t = i | x_{t-1} = j)
         self.Q = self._build_transition_matrices()
 
@@ -53,7 +53,7 @@ class DiscreteDiffusion:
 
     @torch.no_grad()
     def p_sample(self, num_samples, basis_idx, num_qubits):
-        """Reverse Process (Generation)[cite: 166]."""
+        """Reverse Process (Generation)."""
         # Start with uniform noise
         x_t = torch.randint(0, 2, (num_samples, num_qubits)).to(self.device)
         b_vec = torch.full((num_samples,), basis_idx, dtype=torch.long).to(self.device)

@@ -10,6 +10,15 @@ from qiskit_aer.noise import (
     thermal_relaxation_error,
     ReadoutError
 )
+# [Optional] Use FakeTorino for realistic noise snapshots
+from qiskit_ibm_runtime.fake_provider import FakeTorino 
+
+# try:
+#     from qiskit_ibm_runtime.fake_provider import FakeTorino
+#     HAS_TORINO = True
+# except ImportError:
+#     HAS_TORINO = False
+#     print("WARNING: qiskit-ibm-runtime not installed. FakeTorino unavailable.")
 
 def get_basis_combinations(num_qubits):
     """Generates all 3^N Pauli basis strings (e.g., 'XX', 'ZY')."""
@@ -17,47 +26,122 @@ def get_basis_combinations(num_qubits):
     return [''.join(p) for p in product(bases, repeat=num_qubits)]
 
 def get_noise_model(noise_type, error_rate=0.01):
-    """
-    Returns a Qiskit NoiseModel based on the selected type.
-    Options: 'ideal', 'readout', 'depolarizing', 'thermal'
-    """
+    """Returns a Qiskit NoiseModel based on the selected type."""
+    if noise_type == 'torino':
+        if not HAS_TORINO:
+            raise ValueError("You must install 'qiskit-ibm-runtime' to use FakeTorino.")
+        
+        # Load the snapshot of the 133-qubit IBM Heron device
+        fake_backend = FakeTorino()
+        noise_model = NoiseModel.from_backend(fake_backend)
+        return noise_model, fake_backend
     noise_model = NoiseModel()
-    
     if noise_type == 'ideal':
         return None
         
     elif noise_type == 'readout':
-        # Symmetric bit-flip error on measurement
         p_error = error_rate
         ro_error = ReadoutError([[1 - p_error, p_error], [p_error, 1 - p_error]])
         noise_model.add_all_qubit_readout_error(ro_error)
         
     elif noise_type == 'depolarizing':
-        # Gate errors (1-qubit and 2-qubit)
-        # 1-qubit error
         e1 = depolarizing_error(error_rate, 1)
         noise_model.add_all_qubit_quantum_error(e1, ['h', 'x', 'sx', 'rz', 'id'])
-        # 2-qubit error (usually 10x larger)
         e2 = depolarizing_error(error_rate * 10, 2)
         noise_model.add_all_qubit_quantum_error(e2, ['cx', 'cz'])
         
     elif noise_type == 'thermal':
-        # T1/T2 relaxation errors
-        # Modeled for a typical superconducting qubit
-        t1 = 50e3  # 50 microseconds
-        t2 = 70e3  # 70 microseconds
-        gate_time_1q = 50   # 50 ns
-        gate_time_2q = 300  # 300 ns
-        
+        t1 = 50e3  # 50 us
+        t2 = 70e3  # 70 us
+        gate_time_1q = 50   
+        gate_time_2q = 300  
         e1 = thermal_relaxation_error(t1, t2, gate_time_1q)
         e2 = thermal_relaxation_error(t1, t2, gate_time_2q).tensor(
              thermal_relaxation_error(t1, t2, gate_time_2q))
-             
         noise_model.add_all_qubit_quantum_error(e1, ['h', 'x', 'sx', 'id'])
         noise_model.add_all_qubit_quantum_error(e2, ['cx'])
         
-    return noise_model
+    return noise_model, None
 
+def generate_universal_dataset(num_samples, num_qubits, min_depth, max_depth, shots, noise_type='readout'):
+    """
+    Generates a dataset of (Clean, Noisy) pairs from MANY different Random Quantum Circuits.
+    
+    Args:
+        num_samples (int): Number of distinct random circuits to generate.
+        num_qubits (int): Number of qubits per circuit.
+        min_depth (int): Minimum depth of random circuits.
+        max_depth (int): Maximum depth of random circuits.
+        shots (int): Number of shots per measurement basis.
+        noise_type (str): Type of noise to apply ('readout', 'depolarizing', etc.).
+    """
+    print(f"--- Generating Universal Dataset: {num_samples} RQCs (N={num_qubits}) ---")
+    print(f"--- Configuration: Depth={min_depth}-{max_depth} | Noise={noise_type} ---")
+    #  Get Noise Model & Backend
+    noise_model, specific_backend = get_noise_model(noise_type)
+    
+    if specific_backend:
+        # Use the Fake Backend directly (Simulation matches device topology)
+        backend = AerSimulator.from_backend(specific_backend)
+    else:
+        # Use generic Simulator with custom noise
+        backend = AerSimulator(noise_model=noise_model)
+    
+    dataset = []
+    basis_combs = get_basis_combinations(num_qubits)
+
+    for i in range(num_samples):
+        # 1. Variable Depth (Curriculum Strategy)
+        depth = np.random.randint(min_depth, max_depth + 1)
+        
+        # 2. Generate Random Circuit Structure
+        # measure=False allows us to calculate the clean statevector first
+        base_qc = random_circuit(num_qubits, depth, measure=False)
+        
+        # 3. Ground Truth (Clean State)
+        # Needed for validation later
+        clean_state = Statevector(base_qc)
+        
+        # 4. Measure in ALL bases (for N=2,3 small scale)
+        # Ideally, we collect data for every basis to allow full tomography training
+        circuit_data = {
+            'circuit_index': i,
+            'clean_state_vector': clean_state,
+            'depth': depth,
+            'measurements': []
+        }
+        
+        for basis_idx, basis_str in enumerate(basis_combs):
+            # Create measurement circuit
+            qc = base_qc.copy()
+            
+            # Apply Rotations
+            for q, basis in enumerate(basis_str):
+                if basis == 'X':
+                    qc.h(q)
+                elif basis == 'Y':
+                    qc.sdg(q)
+                    qc.h(q)
+            
+            qc.measure_all()
+            
+            # Simulate
+            t_qc = transpile(qc, backend, optimization_level = 1)
+            result = backend.run(t_qc, shots=shots).result()
+            counts = result.get_counts()
+            
+            circuit_data['measurements'].append({
+                'basis_str': basis_str,
+                'basis_idx': basis_idx,
+                'counts': counts
+            })
+            
+        dataset.append(circuit_data)
+        
+        if (i + 1) % 10 == 0:
+            print(f"Generated {i + 1}/{num_samples} circuits...")
+
+    return dataset, basis_combs
 def create_circuit(state_type, num_qubits, basis_str, rqc_depth=4):
     """
     Creates the state preparation + measurement rotation circuit.
