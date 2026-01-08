@@ -28,8 +28,8 @@ def get_basis_combinations(num_qubits):
 def get_noise_model(noise_type, error_rate=0.01):
     """Returns a Qiskit NoiseModel based on the selected type."""
     if noise_type == 'torino':
-        if not HAS_TORINO:
-            raise ValueError("You must install 'qiskit-ibm-runtime' to use FakeTorino.")
+        # if not HAS_TORINO:
+        #     raise ValueError("You must install 'qiskit-ibm-runtime' to use FakeTorino.")
         
         # Load the snapshot of the 133-qubit IBM Heron device
         fake_backend = FakeTorino()
