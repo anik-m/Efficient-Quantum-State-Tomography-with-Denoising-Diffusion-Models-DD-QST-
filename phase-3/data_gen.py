@@ -191,11 +191,18 @@ def generate_synthetic_data(num_qubits, state_type, shots, noise_type='readout',
     """Generates noisy training data."""
     print(f"--- Generating Data for {num_qubits}-Qubit {state_type.upper()} State ---")
     print(f"--- Noise Model: {noise_type.upper()} ---")
+    noise_model, specific_backend = get_noise_model(noise_type)
     
-    noise_model = get_noise_model(noise_type)
-    backend = AerSimulator(noise_model=noise_model)
+    # Configure Backend
+    if specific_backend:
+        # Use the specific Fake Backend (e.g., Torino) if available
+        backend = AerSimulator.from_backend(specific_backend)
+    else:
+        # Use generic Simulator with the custom noise model
+        backend = AerSimulator(noise_model=noise_model)
     
     basis_combs = get_basis_combinations(num_qubits)
+    
     dataset = []
     
     # IMPORTANT: For RQC, we generate ONE random circuit and measure it in all bases.
