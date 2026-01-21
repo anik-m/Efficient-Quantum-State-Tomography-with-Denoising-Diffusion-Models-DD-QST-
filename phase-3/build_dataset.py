@@ -4,12 +4,15 @@ import numpy as np
 import hashlib
 import sys
 from itertools import product
+
+# Qiskit Imports
+import qiskit.qasm2 
 from qiskit import transpile
 from qiskit_aer import AerSimulator
 from qiskit.circuit.random import random_circuit
 from qiskit.quantum_info import Statevector
 
-# Safe Import for Torino
+# Safe Import for Torino (Optional Real Hardware Noise)
 try:
     from qiskit_ibm_runtime.fake_provider import FakeTorino
     HAS_TORINO = True
@@ -30,7 +33,8 @@ def get_backend(noise_type):
 
 def get_circuit_hash(qc):
     """Unique fingerprint for deduplication (MD5 of QASM)."""
-    return hashlib.md5(qc.qasm().encode('utf-8')).hexdigest()
+    qasm_str = qiskit.qasm2.export(qc)
+    return hashlib.md5(qasm_str.encode('utf-8')).hexdigest()
 
 def generate_master_dataset(n_samples, n_qubits, min_depth, max_depth, shots, noise_type, save_path):
     print(f"\n=== Generating Master RQC Dataset (N={n_qubits}) ===")
@@ -66,7 +70,6 @@ def generate_master_dataset(n_samples, n_qubits, min_depth, max_depth, shots, no
         seen_hashes.add(c_hash)
         
         # 3. Ground Truth (Ideal State)
-        # Needed for "Fidelity vs Depth" validation later
         clean_state = Statevector(qc)
         
         # 4. Generate Bases
