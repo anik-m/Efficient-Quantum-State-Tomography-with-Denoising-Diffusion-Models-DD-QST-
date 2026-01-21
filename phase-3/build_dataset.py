@@ -33,7 +33,7 @@ def get_backend(noise_type):
 
 def get_circuit_hash(qc):
     """Unique fingerprint for deduplication (MD5 of QASM)."""
-    qasm_str = qiskit.qasm2.export(qc)
+    qasm_str = qiskit.qasm2.dumps(qc)
     return hashlib.md5(qasm_str.encode('utf-8')).hexdigest()
 
 def generate_master_dataset(n_samples, n_qubits, min_depth, max_depth, shots, noise_type, save_path):
