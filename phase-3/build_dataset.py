@@ -3,127 +3,134 @@ import torch
 import numpy as np
 import hashlib
 import sys
-from itertools import product
-
-# Qiskit Imports
 import qiskit.qasm2 
+from itertools import product
 from qiskit import transpile
 from qiskit_aer import AerSimulator
 from qiskit.circuit.random import random_circuit
 from qiskit.quantum_info import Statevector
 
-# Safe Import for Torino (Optional Real Hardware Noise)
+# Safe Import for Torino
 try:
     from qiskit_ibm_runtime.fake_provider import FakeTorino
     HAS_TORINO = True
 except ImportError:
     HAS_TORINO = False
 
-def get_backend(noise_type):
-    """Returns the requested backend (Ideal, Generic Noisy, or FakeTorino)."""
-    if noise_type == 'torino':
-        if HAS_TORINO:
-            print("--- Loading FakeTorino (Real Hardware Snapshot) ---")
-            return AerSimulator.from_backend(FakeTorino())
-        else:
-            print("WARNING: qiskit-ibm-runtime missing. Falling back to ideal simulator.")
-            return AerSimulator()
-    # Add generic noise models here if needed (depolarizing etc)
-    return AerSimulator()
-
 def get_circuit_hash(qc):
-    """Unique fingerprint for deduplication (MD5 of QASM)."""
+    """Generates a deterministic hash of the circuit structure."""
+    # We use qasm2.dumps because it captures the exact gates and parameters
     qasm_str = qiskit.qasm2.dumps(qc)
     return hashlib.md5(qasm_str.encode('utf-8')).hexdigest()
 
-def generate_master_dataset(n_samples, n_qubits, min_depth, max_depth, shots, noise_type, save_path):
-    print(f"\n=== Generating Master RQC Dataset (N={n_qubits}) ===")
-    print(f"Target: {n_samples} Unique Circuits | Depth: {min_depth}-{max_depth} | Noise: {noise_type}")
-
-    backend = get_backend(noise_type)
-    dataset = []
-    seen_hashes = set()
+def generate_strict_dataset(n_samples, n_qubits, min_depth, max_depth, shots, noise_type, save_path):
+    print(f"\n=== Strict Unique Dataset Generation (N={n_qubits}) ===")
     
-    # Strategy Switch: Full Tomography vs Shadow Sampling
-    # N <= 4: Full Tomography (Capture all 3^N correlations)
-    # N >= 5: Shadow Sampling (Too many bases, just sample a subset)
-    use_shadow = (n_qubits >= 5)
-    bases_per_circuit = 100 if use_shadow else 3**n_qubits
+    # --- PHASE 1: GENERATE & DEDUPLICATE (CPU Only, Very Fast) ---
+    print("Phase 1: Generating unique circuit pool...")
     
-    print(f"Strategy: {'Shadow Sampling' if use_shadow else 'Full Tomography'} ({bases_per_circuit} bases/circuit)")
-
+    unique_circuits = {} # Map: hash -> circuit
     attempts = 0
-    collisions = 0
     
-    while len(dataset) < n_samples:
+    while len(unique_circuits) < n_samples:
         attempts += 1
         
-        # 1. Random Depth (Curriculum)
+        # 1. Generate Random Structure
         depth = np.random.randint(min_depth, max_depth + 1)
         qc = random_circuit(n_qubits, depth, measure=False)
         
-        # 2. Deduplication
+        # 2. Strict Hash Check
         c_hash = get_circuit_hash(qc)
-        if c_hash in seen_hashes:
-            collisions += 1
-            continue
-        seen_hashes.add(c_hash)
         
-        # 3. Ground Truth (Ideal State)
+        if c_hash not in unique_circuits:
+            # Store the circuit object for Phase 2
+            unique_circuits[c_hash] = {'qc': qc, 'depth': depth, 'hash': c_hash}
+            
+        if attempts % 1000 == 0:
+            print(f"  -> Pool Size: {len(unique_circuits)}/{n_samples} (scanned {attempts} candidates)")
+            
+        # Safety break if parameters make uniqueness impossible (unlikely for N=2)
+        if attempts > n_samples * 50:
+            raise RuntimeError(f"Could not find {n_samples} unique circuits. Try increasing depth or qubit count.")
+
+    print(f"SUCCESS: Found {len(unique_circuits)} unique circuits.")
+    
+    # --- PHASE 2: SIMULATION (Expensive Part) ---
+    print(f"Phase 2: Simulating {n_samples} circuits on {noise_type} backend...")
+    
+    # Setup Backend
+    backend = AerSimulator()
+    if noise_type == 'torino' and HAS_TORINO:
+        backend = AerSimulator.from_backend(FakeTorino())
+
+    dataset = []
+    
+    # Bases Setup
+    use_shadow = (n_qubits >= 5)
+    bases_per_circuit = 100 if use_shadow else 3**n_qubits
+    if not use_shadow:
+        all_bases = [''.join(p) for p in product(['X', 'Y', 'Z'], repeat=n_qubits)]
+
+    # Convert dictionary to list for iteration
+    circuit_pool = list(unique_circuits.values())
+
+    for idx, item in enumerate(circuit_pool):
+        qc = item['qc']
+        
+        # 1. Ground Truth
         clean_state = Statevector(qc)
         
-        # 4. Generate Bases
+        # 2. Determine Bases for this circuit
         if use_shadow:
-            # Randomly sample 'bases_per_circuit' strings (e.g., "XZY")
             bases = ["".join(np.random.choice(['X','Y','Z'], size=n_qubits)) for _ in range(bases_per_circuit)]
         else:
-            # Generate ALL combinations
-            bases = [''.join(p) for p in product(['X', 'Y', 'Z'], repeat=n_qubits)]
-            
-        # 5. Simulate Measurements
-        measurements = []
+            bases = all_bases
+
+        # 3. Batch Simulation (Optimization)
+        # We create all measurement circuits first, then transpile in batch
+        circuits_to_run = []
         for basis_str in bases:
             meas_qc = qc.copy()
-            
-            # Apply Basis Rotation
             for q, b in enumerate(basis_str):
                 if b == 'X': meas_qc.h(q)
                 elif b == 'Y': meas_qc.sdg(q); meas_qc.h(q)
-            # Z requires no gate
-            
             meas_qc.measure_all()
-            
-            # Transpile & Run
-            # Opt level 1 is fast; use 3 if you want realistic mapping
-            t_qc = transpile(meas_qc, backend, optimization_level=1)
-            result = backend.run(t_qc, shots=shots).result()
-            
-            # Save sparse counts
+            circuits_to_run.append(meas_qc)
+        
+        # Batch Transpile (Optimization Level 1 is sufficient for random)
+        t_qcs = transpile(circuits_to_run, backend, optimization_level=1)
+        
+        # Batch Run
+        # backend.run can take a list of circuits!
+        result = backend.run(t_qcs, shots=shots).result()
+        
+        # 4. Pack Data
+        measurements = []
+        for i, basis_str in enumerate(bases):
             measurements.append({
                 'basis': basis_str,
-                'counts': result.get_counts()
+                'counts': result.get_counts(i)
             })
             
         dataset.append({
-            'id': len(dataset),
-            'depth': depth,
-            'hash': c_hash,
+            'id': idx,
+            'hash': item['hash'],
+            'depth': item['depth'],
             'clean_state_vec': clean_state,
             'measurements': measurements
         })
         
-        # Progress Log
-        if len(dataset) % 100 == 0:
-            sys.stdout.write(f"\rProgress: {len(dataset)}/{n_samples} | Collisions: {collisions}")
-            sys.stdout.flush()
+        if (idx+1) % 50 == 0:
+            print(f"  -> Simulated {idx+1}/{n_samples}")
 
-    print(f"\n--- Saving to {save_path} ---")
+    # --- PHASE 3: SAVE ---
+    print(f"--- Saving to {save_path} ---")
     torch.save(dataset, save_path)
     print("Done.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--samples', type=int, default=1000)
+    parser.add_argument('--samples', type=int, default=2000)
     parser.add_argument('--qubits', type=int, default=2)
     parser.add_argument('--min_depth', type=int, default=2)
     parser.add_argument('--max_depth', type=int, default=10)
@@ -132,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--out', type=str, required=True)
     
     args = parser.parse_args()
-    generate_master_dataset(
+    generate_strict_dataset(
         args.samples, args.qubits, args.min_depth, args.max_depth, 
         args.shots, args.noise, args.out
     )
