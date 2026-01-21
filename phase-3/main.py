@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import argparse
 import sys
+from sklearn.model_selection import train_test_split
 
 from config import DEFAULTS
 from data_gen import generate_synthetic_data, generate_universal_dataset
@@ -14,6 +15,31 @@ from diffusion import DiscreteDiffusion
 from reconstruct import linear_inversion, get_metrics
 from qiskit.quantum_info import state_fidelity
 
+def load_and_split_data(file_path, test_size=0.2):
+    """
+    Loads Master RQC dataset and performs a STRATIFIED split based on depth.
+    This ensures the Test Set covers all depths (2, 4, 6...) equally.
+    """
+    print(f"--- Loading Master Dataset: {file_path} ---")
+    full_dataset = torch.load(file_path)
+    
+    # Extract depths for stratification
+    depths = [item['depth'] for item in full_dataset]
+    
+    # Split INDICES, not data (to save memory during split)
+    indices = list(range(len(full_dataset)))
+    train_idx, test_idx = train_test_split(
+        indices, 
+        test_size=test_size, 
+        stratify=depths,  # <--- CRITICAL for Plots
+        random_state=42   # Fixed seed for reproducibility
+    )
+    
+    train_data = [full_dataset[i] for i in train_idx]
+    test_data = [full_dataset[i] for i in test_idx]
+    
+    print(f"Split Complete: {len(train_data)} Train | {len(test_data)} Test")
+    return train_data, test_data
 def get_args():
     parser = argparse.ArgumentParser(description="D3PM Quantum Tomography")
     
@@ -77,18 +103,24 @@ def main():
     
     # 1. Generate Training Data
     # Note: For RQC, 'target_state' is generated dynamically
-    raw_data, basis_list, target_state = generate_synthetic_data(
-        args.num_qubits, 
-        args.state_type, 
-        args.shots_train,
-        args.noise_type,
-        args.rqc_depth
-    )
-    
-    # 2. Dataset Setup
-    dataset = QuantumStateDataset(raw_data, args.num_qubits)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    # raw_data, basis_list, target_state = generate_synthetic_data(
+    #     args.num_qubits, 
+    #     args.state_type, 
+    #     args.shots_train,
+    #     args.noise_type,
+    #     args.rqc_depth
+    # )
 
+    # 1. Load & Split
+
+    train_data_raw, test_data_raw = load_and_split_data(args.dataset_path)   
+    # 2. Dataset Setup
+    # dataset = QuantumStateDataset(raw_data, args.num_qubits)
+    # loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    train_dataset = QuantumStateDataset(train_data_raw)
+    test_dataset = QuantumStateDataset(test_data_raw)
+    
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     # 3. Model Setup
     model = ConditionalD3PM(
         num_qubits=args.num_qubits,
