@@ -1,49 +1,58 @@
 import torch
 from torch.utils.data import Dataset
 from itertools import product
-import numpy as np
+import glob
+import os
 
 class PreGeneratedDataset(Dataset):
-    def __init__(self, raw_data_list, num_qubits):
+    def __init__(self, data_source, num_qubits):
         """
         Args:
-            raw_data_list: List of circuit dictionaries (from build_dataset.py).
+            data_source: Can be a single .pt file path OR a directory containing part_*.pt files.
             num_qubits: Used to generate the master basis map.
         """
         self.samples = []
         
-        # 1. Create Basis Map (String -> Index)
-        # We need a fixed index for every possible basis string for the embedding layer.
-        # Note: This works well for N <= 5. For N > 5, we need a dynamic tokenizer.
+        # 1. Load Data (Handle File vs Directory)
+        raw_data_list = []
+        
+        if os.path.isdir(data_source):
+            # It's a directory (from batch_build.py)
+            files = glob.glob(os.path.join(data_source, "*.pt"))
+            files.sort() # Ensure consistent order
+            print(f"Loading {len(files)} parts from {data_source}...")
+            for f in files:
+                part_data = torch.load(f)
+                raw_data_list.extend(part_data)
+        else:
+            # It's a single file
+            print(f"Loading single file: {data_source}")
+            raw_data_list = torch.load(data_source)
+            
+        print(f"Total Circuits Loaded: {len(raw_data_list)}")
+
+        # 2. Create Basis Map (String -> Index)
         all_bases = [''.join(p) for p in product(['X', 'Y', 'Z'], repeat=num_qubits)]
         self.basis_to_idx = {b: i for i, b in enumerate(all_bases)}
         
-        print(f"Processing {len(raw_data_list)} circuits for training...")
-        
-        # 2. Flatten Data
+        # 3. Flatten Data for Training
         for circuit in raw_data_list:
             for meas in circuit['measurements']:
                 basis_str = meas['basis']
                 if basis_str not in self.basis_to_idx:
-                    continue # Should not happen if map is complete
+                    continue 
                 
                 basis_idx = self.basis_to_idx[basis_str]
                 
                 for bitstr, count in meas['counts'].items():
-                    # CRITICAL FIX: Endianness
-                    # Qiskit (Little-Endian) -> Python List (Big-Endian)
-                    # "01" (q1=0, q0=1) -> [0, 1] (q0, q1) if reversed properly
-                    # For consistency with reconstruct.py, we reverse here.
+                    # FIX: Endianness reversal
                     bits = [int(b) for b in bitstr][::-1]
-                    
-                    # Add this sample 'count' times
                     self.samples.extend([(bits, basis_idx)] * count)
 
-        # Convert to Tensors for speed
-        # This might consume RAM for huge datasets. 
-        # If >10GB data, use __getitem__ logic instead of pre-list.
-        self.data_tensor = [torch.tensor(s[0], dtype=torch.long) for s in self.samples]
-        self.basis_tensor = [torch.tensor(s[1], dtype=torch.long) for s in self.samples]
+        # Convert to Tensors (RAM heavy but fast)
+        # If dataset > 10GB, you must move this to __getitem__
+        self.data_tensor = torch.tensor([s[0] for s in self.samples], dtype=torch.long)
+        self.basis_tensor = torch.tensor([s[1] for s in self.samples], dtype=torch.long)
         
         print(f"-> Created {len(self.samples)} training samples.")
 
