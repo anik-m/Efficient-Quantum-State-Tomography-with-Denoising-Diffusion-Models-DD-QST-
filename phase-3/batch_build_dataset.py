@@ -21,7 +21,7 @@ except ImportError:
 def get_circuit_hash(qc):
     return hashlib.md5(qiskit.qasm2.dumps(qc).encode('utf-8')).hexdigest()
 
-def generate_batched_dataset(n_samples, n_qubits, min_depth, max_depth, shots, noise_type, save_dir, chunk_size):
+def generate_batched_dataset(n_samples, n_qubits, min_depth, max_depth, shots, chunk_size, noise_type, save_dir):
     print(f"\n=== Batched Generation (N={n_qubits}) ===")
     print(f"Target: {n_samples} samples | Chunk Size: {chunk_size}")
     
@@ -162,5 +162,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     generate_batched_dataset(
         args.samples, args.qubits, args.min_depth, args.max_depth, 
-        args.shots, args.noise, args.chunk_size, args.out_dir
+        args.shots, args.chunk_size, args.noise,  args.out_dir
     )
