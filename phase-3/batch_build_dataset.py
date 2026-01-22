@@ -162,5 +162,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     generate_batched_dataset(
         args.samples, args.qubits, args.min_depth, args.max_depth, 
-        args.shots, args.noise, args.out_dir
+        args.shots, args.noise, args.chunk_size, args.out_dir
     )
