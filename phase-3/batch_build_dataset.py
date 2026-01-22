@@ -155,6 +155,7 @@ if __name__ == "__main__":
     parser.add_argument('--min_depth', type=int, default=2)
     parser.add_argument('--max_depth', type=int, default=10)
     parser.add_argument('--shots', type=int, default=1024)
+    parser.add_argument('--chunk_size', type=int, default=500)
     parser.add_argument('--noise', type=str, default='torino')
     parser.add_argument('--out_dir', type=str, default='dataset_parts')
     
