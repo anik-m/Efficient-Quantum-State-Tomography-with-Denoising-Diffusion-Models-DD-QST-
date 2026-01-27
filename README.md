@@ -60,8 +60,8 @@ Diffusion models optimize a variational lower bound, forcing the model to cover 
 | **Phase**          | **Innovation**              | **Target System**    | **Status**   |
 | ------------------ | --------------------------- | -------------------- | ------------ |
 | **1. Foundation**  | Basis Conditioning (MLP)    | 1-Qubit / Bell State | **Complete** |
-| **2. Scalability** | Transformer Backbone + FiLM | 5-8 Qubit GHZ        | **Active**   |
-| **3. Refinement**  | Physics-Aware Noise Models  | Mixed Werner States  | Planned      |
+| **2. Scalability** | Backbone + FiLM | Multi-Qubit system        | **Complete**   |
+| **3. Refinement**  | Noise Modelling  | RQC's  | Active      |
 
 ---
 
