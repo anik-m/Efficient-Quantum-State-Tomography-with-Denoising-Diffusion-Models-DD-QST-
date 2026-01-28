@@ -23,7 +23,7 @@ def load_all_circuits(data_path):
     if os.path.isfile(data_path):
         print(f"Loading single dataset file: {data_path}")
         try:
-            data = torch.load(data_path)
+            data = torch.load(data_path, weights_only=False)
             if isinstance(data, list):
                 all_data = data
             else:
