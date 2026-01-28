@@ -6,64 +6,88 @@ import argparse
 import os
 import glob
 import random
+import sys
 
-# Imports
+# Custom Imports
 from dataset import QuantumStateDataset
 from model import ConditionalD3PM
 from diffusion import DiscreteDiffusion
 
-def load_all_data(data_path):
-    """Helper to load all circuits into a single list, regardless of file structure."""
-    all_circuits = []
+def load_all_circuits(data_path):
+    """
+    Universal Loader: Handles both directory of parts AND single .pt file.
+    Returns a single list of circuit dictionaries.
+    """
+    all_data = []
     
-    if os.path.isdir(data_path):
-        # Folder mode
+    if os.path.isfile(data_path):
+        print(f"Loading single dataset file: {data_path}")
+        try:
+            data = torch.load(data_path)
+            if isinstance(data, list):
+                all_data = data
+            else:
+                # If it's a single dict (rare but possible), wrap in list
+                all_data = [data]
+        except Exception as e:
+            print(f"Error loading file: {e}")
+            sys.exit(1)
+
+    elif os.path.isdir(data_path):
+        print(f"Loading dataset parts from folder: {data_path}")
         files = sorted(glob.glob(os.path.join(data_path, "*.pt")))
-        print(f"Found {len(files)} parts in folder.")
+        if not files:
+            print("No .pt files found in directory!")
+            sys.exit(1)
+            
         for f in files:
             try:
-                all_circuits.extend(torch.load(f))
-            except:
-                print(f"Failed to load {f}")
-    elif os.path.isfile(data_path):
-        # Single file mode
-        print(f"Loading single file: {data_path}")
-        all_circuits = torch.load(data_path)
+                part = torch.load(f)
+                all_data.extend(part)
+            except Exception as e:
+                print(f"Skipping corrupt file {f}: {e}")
     else:
-        raise ValueError(f"Invalid path: {data_path}")
-        
-    return all_circuits
+        print(f"Error: Path not found: {data_path}")
+        sys.exit(1)
+
+    return all_data
 
 def train_model(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"--- Training on {device} ---")
-
-    # 1. Load Everything
-    print("Loading Master Dataset...")
-    all_circuits = load_all_data(args.data_path)
-    print(f"Total Unique Circuits Loaded: {len(all_circuits)}")
+    print(f"--- 🧠 Training Run: '{args.run_name}' on {device} ---")
     
-    # 2. Strict Circuit-Level Split
-    # We split the CIRCUITS, not the shots.
+    # 1. Setup Directories
+    os.makedirs(args.save_dir, exist_ok=True)
+
+    # 2. Load & Split Data (Strict Circuit Separation)
+    print("Loading Master Dataset...")
+    all_circuits = load_all_circuits(args.data_path)
+    print(f"Total Unique Circuits Found: {len(all_circuits)}")
+    
+    # Shuffle and Split
     random.shuffle(all_circuits)
-    split_idx = int(0.9 * len(all_circuits))
+    split_idx = int(0.9 * len(all_circuits)) # 90/10 Split
     
     train_circuits = all_circuits[:split_idx]
     test_circuits = all_circuits[split_idx:]
     
-    print(f"Train Circuits: {len(train_circuits)} | Test Circuits: {len(test_circuits)}")
+    print(f"Train Set: {len(train_circuits)} circuits")
+    print(f"Test Set:  {len(test_circuits)} circuits (Saved for Evaluation)")
     
-    # 3. Save Test Data for Evaluation (CRITICAL)
-    os.makedirs("checkpoints", exist_ok=True)
-    torch.save(test_circuits, "checkpoints/test_circuits_unseen.pt")
-    print("Saved unseen test circuits to 'checkpoints/test_circuits_unseen.pt'")
+    # 3. SAVE THE TEST DATA (The "Golden Record")
+    # We save this specific list of circuits so evaluate.py uses EXACTLY these
+    test_data_path = os.path.join(args.save_dir, f"{args.run_name}_test_circuits.pt")
+    torch.save(test_circuits, test_data_path)
+    print(f"✅ Unseen Test Data saved to: {test_data_path}")
 
-    # 4. Initialize Datasets (Passing lists, not paths)
+    # 4. Create Datasets (Passing lists directly)
+    # dataset.py must be the version that accepts a list in __init__
     train_dataset = QuantumStateDataset(train_circuits, args.num_qubits)
-    test_dataset = QuantumStateDataset(test_circuits, args.num_qubits)
+    # We create a validation loader from test circuits to monitor progress during training
+    val_dataset = QuantumStateDataset(test_circuits, args.num_qubits)
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
 
     # 5. Initialize Model
     num_bases = 3 ** args.num_qubits
@@ -76,6 +100,7 @@ def train_model(args):
 
     # 6. Training Loop
     best_val_loss = float('inf')
+    model_save_path = os.path.join(args.save_dir, f"{args.run_name}_best_model.pt")
     
     print("\n--- Starting Training Loop ---")
     for epoch in range(args.num_epochs):
@@ -89,7 +114,7 @@ def train_model(args):
             x_t = diffusion.q_sample(x_0, t)
             pred_logits = model(x_t, t, basis_idx)
             
-            # Cross Entropy expects (Batch, Classes, Seq)
+            # Loss: Cross Entropy
             loss = F.cross_entropy(pred_logits.permute(0, 2, 1), x_0)
             
             optimizer.zero_grad()
@@ -97,11 +122,11 @@ def train_model(args):
             optimizer.step()
             total_train_loss += loss.item()
             
-        # Validation Loop
+        # Validation Step
         model.eval()
         total_val_loss = 0
         with torch.no_grad():
-            for x_0, basis_idx in test_loader:
+            for x_0, basis_idx in val_loader:
                 x_0, basis_idx = x_0.to(device), basis_idx.to(device)
                 t = torch.randint(1, args.num_timesteps + 1, (x_0.shape[0],)).to(device)
                 x_t = diffusion.q_sample(x_0, t)
@@ -110,23 +135,33 @@ def train_model(args):
                 total_val_loss += val_loss.item()
         
         avg_train = total_train_loss / max(1, len(train_loader))
-        avg_val = total_val_loss / max(1, len(test_loader))
+        avg_val = total_val_loss / max(1, len(val_loader))
         
-        print(f"Epoch {epoch+1:02d} | Train Loss: {avg_train:.4f} | Val Loss: {avg_val:.4f}")
+        print(f"Epoch {epoch+1:02d}/{args.num_epochs} | Train Loss: {avg_train:.4f} | Val Loss: {avg_val:.4f}")
         
+        # Save Best
         if avg_val < best_val_loss:
             best_val_loss = avg_val
-            torch.save(model.state_dict(), f"checkpoints/best_model_n{args.num_qubits}.pt")
-            print("  -> Saved Best Model")
+            torch.save(model.state_dict(), model_save_path)
+            print(f"  ⭐ New Best Model Saved (Val Loss: {best_val_loss:.4f})")
+
+    print(f"\nTraining Complete. Best Model: {model_save_path}")
+    print(f"Test Data for Evaluation: {test_data_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # Can be a folder OR a .pt file
-    parser.add_argument('--data_path', type=str, default='dataset_parts') 
+    
+    # Path Arguments
+    parser.add_argument('--data_path', type=str, required=True, help="Path to .pt file OR folder")
+    parser.add_argument('--save_dir', type=str, default='experiments/default_run', help="Where to save model/test data")
+    parser.add_argument('--run_name', type=str, default='model_v1', help="Prefix for saved files")
+    
+    # Physics Args
     parser.add_argument('--num_qubits', type=int, default=3)
+    
+    # Hyperparams
     parser.add_argument('--num_epochs', type=int, default=30)
     parser.add_argument('--batch_size', type=int, default=1024)
-    # Model Args
     parser.add_argument('--num_timesteps', type=int, default=100)
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--hidden_dim', type=int, default=512)
