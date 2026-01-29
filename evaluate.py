@@ -79,7 +79,7 @@ def evaluate(args):
         raise FileNotFoundError(f"Test data file not found: {args.test_data_path}")
     
     print(f"Loading unseen circuits from: {args.test_data_path}")
-    raw_dataset = torch.load(args.test_data_path)
+    raw_dataset = torch.load(args.test_data_path, weights_only=False)
     print(f"Loaded {len(raw_dataset)} unseen test circuits.")
 
     # 2. Load Model
@@ -91,7 +91,7 @@ def evaluate(args):
     if not os.path.exists(args.model_path):
         raise FileNotFoundError(f"Model weights not found: {args.model_path}")
         
-    model.load_state_dict(torch.load(args.model_path, map_location=device))
+    model.load_state_dict(torch.load(args.model_path, map_location=device, weights_only=False))
     model.eval()
     diffusion = DiscreteDiffusion(model, args.num_timesteps, device)
 
