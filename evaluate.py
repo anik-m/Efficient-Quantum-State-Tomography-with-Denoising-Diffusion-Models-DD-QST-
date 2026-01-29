@@ -178,7 +178,7 @@ def evaluate(args):
     # Plot 4: Bias Histogram
     
 
-[Image of data distribution histogram]
+# [Image of data distribution histogram]
 
     plt.figure(figsize=(8, 6))
     sns.histplot(data=df, x='Bias', bins=10, kde=True, color='purple')
