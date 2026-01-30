@@ -121,8 +121,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', required=True)
     parser.add_argument('--eval_data_path', required=True, help="Path to *_eval_subset.pt")
-    parser.add_argument('--out_dir', default='paper_results')
-    parser.add_argument('--num_qubits', type=int, default=3)
+    parser.add_argument('--out_dir', default='results')
+    parser.add_argument('--num_qubits', type=int, default=2)
     parser.add_argument('--shots_infer', type=int, default=2000)
     # Model Args
     parser.add_argument('--num_timesteps', type=int, default=100)

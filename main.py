@@ -156,8 +156,8 @@ if __name__ == "__main__":
     parser.add_argument('--train_ratio', type=float, default=1.0, help="Fraction of total data to use for training (0.0 to 1.0)")
     parser.add_argument('--num_eval_circuits', type=int, default=50, help="Number of trained circuits to verify in evaluation")
     
-    parser.add_argument('--num_qubits', type=int, default=3)
-    parser.add_argument('--num_epochs', type=int, default=30)
+    parser.add_argument('--num_qubits', type=int, default=2)
+    parser.add_argument('--num_epochs', type=int, default=1)
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--num_timesteps', type=int, default=100)
     parser.add_argument('--embed_dim', type=int, default=128)
