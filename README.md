@@ -22,48 +22,52 @@ While **GANs** and **VAEs** have been explored for this task, they suffer from s
 
 Diffusion models optimize a variational lower bound, forcing the model to cover the full support of the data distribution. This makes them uniquely suited for **mixed-state tomography**.
 
-<!-- ## 3. Methodology & Architecture -->
-<!---->
-<!-- ### 3.1 Conditional Architecture (FiLM) -->
-<!---->
-<!-- A quantum state looks different depending on the measurement basis (e.g., ( X, Y, Z )). Therefore, the generative model must be **conditioned** on the measurement settings. We use **Feature-wise Linear Modulation (FiLM)** to inject this physical context into the neural network. -->
-<!---->
-<!-- Mathematically, the basis vector ( \mathbf{c} ) modulates the internal features ( \mathbf{h}_l ) of the network via learned scale (( \gamma )) and shift (( \beta )) parameters: -->
-<!---->
-<!-- [ -->
-<!-- \mathbf{h}_{l+1} = \text{Activation} \left( \gamma_l(\mathbf{c}) \odot \mathbf{h}_l + \beta_l(\mathbf{c}) \right) -->
-<!-- ] -->
-<!---->
-<!-- This affine transformation effectively "rotates" the latent representation to match the measurement basis, analogous to a unitary rotation in Hilbert space. -->
-<!---->
-<!-- ### 3.2 Discrete Diffusion (D3PM) -->
-<!---->
-<!-- Standard diffusion models use Gaussian noise, but quantum measurement data consists of discrete bitstrings (( 0 ) or ( 1 )). To align the machine learning model with the physics of the device, we implement **Discrete Denoising Diffusion Probabilistic Models (D3PM)**. -->
-<!---->
-<!-- The forward diffusion process is modeled as a **Bit Flip Channel** (or Depolarizing Channel), which is mathematically identical to the Readout Error observed in quantum hardware. The transition matrix ( Q_t ) for a single qubit is given by: -->
-<!---->
-<!-- [ -->
-<!-- Q_t = \begin{bmatrix} -->
-<!-- 1 - \beta_t & \beta_t \ -->
-<!-- \beta_t & 1 - \beta_t -->
-<!-- \end{bmatrix} -->
-<!-- ] -->
-<!---->
-<!-- Where ( \beta_t ) represents the probability of a bit flip at timestep ( t ). The model is trained using **Cross-Entropy loss** to reverse this process and reconstruct the clean bitstring: -->
-<!---->
-<!-- [ -->
-<!-- L = \mathbb{E}*{q} \left[ -\log p*\theta(x_0 | x_t, \mathbf{c}) \right] -->
-<!-- ] -->
-<!---->
+## 3. Methodology & Architecture
+
+### 3.1 Conditional Architecture (FiLM)
+
+A quantum state looks different depending on the measurement basis (e.g., ( X, Y, Z )). Therefore, the generative model must be **conditioned** on the measurement settings. We use **Feature-wise Linear Modulation (FiLM)** to inject this physical context into the neural network.
+
+Mathematically, the basis vector ( \mathbf{c} ) modulates the internal features ( \mathbf{h}_l ) of the network via learned scale (( \gamma )) and shift (( \beta )) parameters:
+
+[
+\mathbf{h}_{l+1} = \text{Activation} \left( \gamma_l(\mathbf{c}) \odot \mathbf{h}_l + \beta_l(\mathbf{c}) \right)
+]
+
+This affine transformation effectively "rotates" the latent representation to match the measurement basis, analogous to a unitary rotation in Hilbert space.
+
+### 3.2 Discrete Diffusion (D3PM)
+
+Standard diffusion models use Gaussian noise, but quantum measurement data consists of discrete bitstrings (( 0 ) or ( 1 )). To align the machine learning model with the physics of the device, we implement **Discrete Denoising Diffusion Probabilistic Models (D3PM)**.
+
+The forward diffusion process is modeled as a **Bit Flip Channel** (or Depolarizing Channel), which is mathematically identical to the Readout Error observed in quantum hardware. The transition matrix ( Q_t ) for a single qubit is given by:
+
+[
+Q_t = \begin{bmatrix}
+1 - \beta_t & \beta_t \
+\beta_t & 1 - \beta_t
+\end{bmatrix}
+]
+
+Where ( \beta_t ) represents the probability of a bit flip at timestep ( t ). The model is trained using **Cross-Entropy loss** to reverse this process and reconstruct the clean bitstring:
+
+[
+L = \mathbb{E}*{q} \left[ -\log p*\theta(x_0 | x_t, \mathbf{c}) \right]
+]
+
 ## 4. Roadmap
 
 | **Phase**          | **Innovation**              | **Target System**    | **Status**   |
 | ------------------ | --------------------------- | -------------------- | ------------ |
 | **1. Foundation**  | Basis Conditioning (MLP)    | 1-Qubit / Bell State | **Complete** |
-| **2. Scalability** | Backbone + FiLM | Multi-Qubit system        | **Complete**   |
-| **3. Refinement**  | Noise Modelling  | RQC's  | Active      |
+| **2. Scalability** | Backbone for multi qubit | Multi-Qubit system        | **Complete**   |
+| **3. Scalability** | Addition of FiLM | Multi-Qubit system        | **Complete**   |
+| **4. Limit Testing and universality **  | Noise Modelling  | RQC's  | Complete      |
+| **5. Refinement*  | Complex Architectures and Quantum Diffusion Model | repitition of past phases  | Active      |
 
 ---
+
+These phases are available in the appropriate folders along with example notebooks.
 
 ## 5. Further Reading
 
@@ -94,19 +98,19 @@ Diffusion models optimize a variational lower bound, forcing the model to cover 
 * **Learning hard quantum distributions with variational autoencoders**
   *Rocchetto, Andrea et al.* (2018). *npj Quantum Information*.
   Early work using VAEs for quantum states; provides a baseline for sample complexity.
-<!---->
-<!-- * **Predicting many properties of a quantum system from very few measurements** -->
-<!--   *Huang, Hsin-Yuan et al.* (2020). *Nature Physics*. -->
-<!--   The seminal paper on "Classical Shadows," a randomized measurement technique relevant to our benchmarking. -->
-<!---->
+
+* **Predicting many properties of a quantum system from very few measurements**
+  *Huang, Hsin-Yuan et al.* (2020). *Nature Physics*.
+  The seminal paper on "Classical Shadows," a randomized measurement technique relevant to our benchmarking.
+
 * **Attention-based quantum tomography**
   *Cha, Peter et al.* (2021). *Machine Learning: Science and Technology*.
   Explores attention mechanisms for QST, supporting our Phase 2 shift to Transformers.
-<!---->
-<!-- * **Neural-network quantum state tomography** -->
-<!--   *Torlai, Giacomo et al.* (2018). *Nature Physics*. -->
-<!--   One of the first demonstrations of using neural networks (RBMs) to represent quantum states. -->
-<!---->
+
+* **Neural-network quantum state tomography**
+  *Torlai, Giacomo et al.* (2018). *Nature Physics*.
+  One of the first demonstrations of using neural networks (RBMs) to represent quantum states.
+
 * **Reconstructing quantum states with generative models**
   *Carrasquilla, Juan et al.* (2019). *Nature Machine Intelligence*.
   A broad overview of generative models in QST, establishing the comparison between RBMs, VAEs, and GANs.
